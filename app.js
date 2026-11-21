@@ -50,6 +50,11 @@
     return freshState();
   }
   let S = load();
+  migrate();
+  function migrate() {
+    S.verbStats = S.verbStats || {};
+    S.settings.vt = S.settings.vt || { set: "basic", mode: "both" };
+  }
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(S)); }
     catch (e) { toast("Speichern hat nicht geklappt. Ist der Speicher voll?"); }
@@ -155,9 +160,10 @@
     $("#tabs").hidden = view === "quiz";
     const tab = view === "unit" ? "woerter" : view;
     document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-current", b.dataset.go === tab ? "page" : "false"));
-    const fn = { start: vStart, ueben: vUeben, woerter: vWoerter, unit: vUnit, ich: vIch, quiz: vQuiz }[view] || vStart;
+    const fn = { start: vStart, ueben: vUeben, woerter: vWoerter, unit: vUnit, ich: vIch, quiz: vQuiz, zeiten: () => vSection("zeiten"), pronomen: () => vSection("pronomen"), verben: vVerben }[view] || vStart;
     m.innerHTML = fn();
     if (view === "quiz") afterQuizRender();
+    if (view === "verben" && gram.verben === "trainer") afterTrainerRender();
   }
 
   /* ---------- Start ---------- */
@@ -469,6 +475,207 @@
     </div>`;
   }
 
+  /* ---------- Grammatik: Zeiten und Pronomen ---------- */
+  const gram = { zeiten: "ueberblick", pronomen: "ueberblick", verben: "liste" };
+  const SECTION_NAME = { zeiten: "Zeiten", pronomen: "Pronomen" };
+  function vSection(sec) {
+    const pages = (window.GRAMMAR && window.GRAMMAR[sec]) || [];
+    const flat = pages.filter((p) => p.id);
+    let pg = flat.find((p) => p.id === gram[sec]) || flat[0];
+    gram[sec] = pg.id;
+    let nav = "", open = false;
+    pages.forEach((p) => {
+      if (p.grp) { nav += (open ? "</div></div>" : "") + `<div class="g-navgrp"><p>${esc(p.grp)}</p><div class="g-navrow">`; open = true; }
+      else nav += `<button class="chip" data-a="gpage" data-sec="${sec}" data-id="${p.id}" aria-pressed="${p.id === pg.id}">${esc(p.title)}</button>`;
+    });
+    if (open) nav += "</div></div>";
+    const i = flat.indexOf(pg), pv = flat[i - 1], nx = flat[i + 1];
+    return `<div class="g-wrap"><nav class="g-nav" aria-label="${SECTION_NAME[sec]}">${nav}</nav>
+      <article class="g-page">${pg.html()}
+        <div class="g-pager">${pv ? `<button class="btn ghost" data-a="gpage" data-sec="${sec}" data-id="${pv.id}">${I.back} ${esc(pv.title)}</button>` : "<span></span>"}
+        ${nx ? `<button class="btn ghost" data-a="gpage" data-sec="${sec}" data-id="${nx.id}">${esc(nx.title)} ${I.chev}</button>` : ""}</div>
+      </article></div>`;
+  }
+
+  /* ---------- Unregelmäßige Verben ---------- */
+  const VERBS = window.IRREGULAR_VERBS || [];
+  const vByInf = (inf) => VERBS.find((v) => v.inf === inf);
+  let vSearch = "", vFilter = "alle";
+  const first = (f) => f.split(" / ")[0];
+  function s3(inf) {
+    if (inf === "be") return "is"; if (inf === "have") return "has";
+    if (/(s|sh|ch|x|o|z)$/.test(inf)) return inf + "es";
+    if (/[^aeiou]y$/.test(inf)) return inf.slice(0, -1) + "ies";
+    return inf + "s";
+  }
+  const DOUBLE = new Set(["babysit", "begin", "bet", "cut", "dig", "forbid", "forget", "get", "hit", "let", "put", "quit", "run", "set", "shut", "sit", "spin", "spit", "split", "swim", "upset", "win"]);
+  function ing(inf) {
+    if (DOUBLE.has(inf)) return inf + inf.slice(-1) + "ing";
+    if (/ie$/.test(inf)) return inf.slice(0, -2) + "ying";
+    if (/[^aeiouy]e$/.test(inf) || /[^e]ue$/.test(inf)) return inf.slice(0, -1) + "ing";
+    return inf + "ing";
+  }
+  const same3 = (v) => v.inf === v.past && v.past === v.pp;
+  const hasErrors = (v) => { const st = S.verbStats[v.inf]; return st && st.last === 0; };
+  function verbMatches(v) {
+    if (vFilter === "basic" && !v.basic) return false;
+    if (vFilter === "same" && !same3(v)) return false;
+    if (vFilter === "fehler" && !hasErrors(v)) return false;
+    const q = vSearch.trim().toLowerCase();
+    return !q || [v.inf, v.past, v.pp, v.de].some((x) => x.toLowerCase().includes(q));
+  }
+  function verbRow(v) {
+    const st = S.verbStats[v.inf];
+    const mark = st ? (st.last ? '<span class="v-ok" title="Zuletzt richtig">✓</span>' : '<span class="v-no" title="Zuletzt falsch">!</span>') : "";
+    return `<li class="v-row"><button class="iconbtn" data-a="say" data-t="${esc(v.inf + ", " + first(v.past) + ", " + first(v.pp))}" aria-label="${esc(v.inf)} vorlesen">${I.speaker}</button>
+      <button class="v-main" data-a="verb" data-id="${esc(v.inf)}"><span class="v-forms" lang="en"><b>${esc(v.inf)}</b><span>${esc(v.past)}</span><span>${esc(v.pp)}</span></span>
+      <span class="v-de">${esc(v.de)}</span></button>${mark}</li>`;
+  }
+  function vVerben() {
+    const sub = gram.verben;
+    const seg = `<div class="seg" role="tablist"><button role="tab" data-a="gpage" data-sec="verben" data-id="liste" aria-selected="${sub === "liste"}">Liste</button><button role="tab" data-a="gpage" data-sec="verben" data-id="trainer" aria-selected="${sub === "trainer"}">Trainer</button></div>`;
+    if (sub === "trainer") return `<div class="stack">${seg}${vTrainer()}</div>`;
+    const counts = { alle: VERBS.length, basic: VERBS.filter((v) => v.basic).length, same: VERBS.filter(same3).length, fehler: VERBS.filter(hasErrors).length };
+    const chip = (k, l) => `<button class="chip" data-a="vfilter" data-v="${k}" aria-pressed="${vFilter === k}">${l} (${counts[k]})</button>`;
+    const items = VERBS.filter(verbMatches);
+    return `<div class="stack">${seg}
+      <header class="g-head"><p class="g-eyebrow">Verben</p><h1>Unregelmäßige Verben</h1>
+        <p class="g-lead">Diese Verben bilden die Vergangenheit nicht mit -ed. Du lernst immer drei Formen: <b>Grundform – Simple Past – Past Participle</b>, zum Beispiel <i>go – went – gone</i>. Tippe auf ein Verb, um zu sehen, wie es in den Zeiten aussieht.</p></header>
+      <label class="field"><span class="sr">Verb suchen</span><input type="search" id="vsearch" placeholder="Verb suchen, englisch oder deutsch …" value="${esc(vSearch)}"></label>
+      <div class="chips">${chip("alle", "Alle")}${chip("basic", "Grundverben")}${chip("same", "3× gleich")}${chip("fehler", "Zuletzt falsch")}</div>
+      <div id="vlist">${verbListHtml(items)}</div>
+    </div>`;
+  }
+  function verbListHtml(items) {
+    if (!items.length) return `<div class="empty"><p>${vFilter === "fehler" ? "Hier landen Verben, die du im Trainer zuletzt falsch hattest. Gerade sind es keine." : "Kein Verb gefunden."}</p></div>`;
+    return `<div class="v-headrow" aria-hidden="true"><span></span><span>Grundform</span><span>Simple Past</span><span>Past Participle</span></div><ul class="v-list">${items.map(verbRow).join("")}</ul>`;
+  }
+  function verbSheet(v) {
+    const p1 = first(v.past), pp = first(v.pp);
+    const past = v.inf === "be" ? "I <b>was</b> / you <b>were</b>" : `I <b>${esc(v.past)}</b>`;
+    const prog = v.inf === "be" ? "I am <b>being</b>" : `I am <b>${esc(ing(v.inf))}</b>`;
+    const rows = [
+      ["simple-present", "Simple Present", v.inf === "be" ? "I <b>am</b> / he <b>is</b>" : `I <b>${esc(v.inf)}</b> / he <b>${esc(s3(v.inf))}</b>`],
+      ["present-progressive", "Present Progressive", prog],
+      ["simple-past", "Simple Past", past],
+      ["present-perfect", "Present Perfect", `I have <b>${esc(pp)}</b>`],
+      ["past-perfect", "Past Perfect", `I had <b>${esc(pp)}</b>`],
+      ["will-future", "will-Future", `I will <b>${esc(v.inf)}</b>`]
+    ];
+    const st = S.verbStats[v.inf];
+    sheet(`<div class="stack">
+      <div class="row between"><h2 lang="en">${esc(v.inf)}</h2><button type="button" class="iconbtn" data-a="close" aria-label="Schließen">${I.close}</button></div>
+      <p class="muted">${esc(v.de)}${v.basic ? ' · <span class="g-badge start">Grundverb</span>' : ""}</p>
+      <div class="v-big" lang="en"><div><small>Grundform</small><b>${esc(v.inf)}</b></div><div><small>Simple Past</small><b>${esc(v.past)}</b></div><div><small>Past Participle</small><b>${esc(v.pp)}</b></div></div>
+      <button class="btn ghost" data-a="say" data-t="${esc(v.inf + ", " + p1 + ", " + pp)}">${I.speaker} Anhören</button>
+      <div class="g-tw"><table><thead><tr><th>Zeit</th><th>So sieht es aus</th></tr></thead><tbody>
+        ${rows.map(([id, name, f]) => `<tr><td><button class="g-link" data-a="gpage" data-sec="zeiten" data-id="${id}">${name}</button></td><td lang="en">${f}</td></tr>`).join("")}
+      </tbody></table></div>
+      ${st ? `<p class="muted small">Im Trainer: ${st.r} × richtig, ${st.w} × falsch.</p>` : ""}
+      <button class="btn" data-a="vt-one" data-id="${esc(v.inf)}">Dieses Verb üben</button>
+    </div>`);
+  }
+
+  /* Verb-Trainer */
+  let VT = null;
+  const VT_MODES = { both: "2. und 3. Form", past: "nur Simple Past", pp: "nur Past Participle", de: "Deutsch → alle drei" };
+  function vtPool() {
+    const set = S.settings.vt.set;
+    if (set === "alle") return VERBS;
+    if (set === "fehler") return VERBS.filter(hasErrors);
+    return VERBS.filter((v) => v.basic);
+  }
+  function vtStart(list) {
+    const pool = list || vtPool();
+    if (!pool.length) { toast("Hier gibt es gerade keine Verben zum Üben."); return; }
+    // Unbekannte und falsche Verben zuerst
+    const score = (v) => { const st = S.verbStats[v.inf]; return st ? (st.last ? 2 : 0) : 1; };
+    const q = shuffle(pool).sort((a, b) => score(a) - score(b)).slice(0, 10);
+    VT = { items: shuffle(q).map((v) => v.inf), i: 0, state: "ask", right: 0, coins: 0, mode: S.settings.vt.mode, res: null };
+    gram.verben = "trainer"; go("verben");
+  }
+  function vtFields(mode) {
+    if (mode === "past") return ["past"];
+    if (mode === "pp") return ["pp"];
+    if (mode === "de") return ["inf", "past", "pp"];
+    return ["past", "pp"];
+  }
+  const FIELD_LABEL = { inf: "Grundform", past: "Simple Past", pp: "Past Participle" };
+  function vTrainer() {
+    const chip = (k, v, l) => `<button class="chip" data-a="vtset" data-k="${k}" data-v="${v}" aria-pressed="${S.settings.vt[k] === v}">${l}</button>`;
+    if (!VT) {
+      const n = vtPool().length;
+      return `<header class="g-head"><p class="g-eyebrow">Verben</p><h1>Verb-Trainer</h1><p class="g-lead">Du siehst ein Verb und tippst die fehlenden Formen ein. Jede Runde hat 10 Verben. Verben, die du noch nicht kannst, kommen zuerst dran.</p></header>
+        <div class="panel stack"><h3>Welche Verben?</h3><div class="chips">${chip("set", "basic", "Grundverben (" + VERBS.filter((v) => v.basic).length + ")")}${chip("set", "alle", "Alle (" + VERBS.length + ")")}${chip("set", "fehler", "Zuletzt falsch (" + VERBS.filter(hasErrors).length + ")")}</div></div>
+        <div class="panel stack"><h3>Was willst du üben?</h3><div class="chips">${Object.entries(VT_MODES).map(([k, l]) => chip("mode", k, l)).join("")}</div></div>
+        <button class="btn big" data-a="vt-start" ${n ? "" : "disabled"}>Runde starten</button>`;
+    }
+    if (VT.i >= VT.items.length) {
+      return `<div class="stack done"><h1>${VT.right === VT.items.length ? "Alles richtig – stark!" : VT.right >= VT.items.length * 0.7 ? "Super gemacht!" : "Gut geübt!"}</h1>
+        <div class="panel stack"><p class="big-coins burst"><i class="coin" style="width:44px;height:44px;vertical-align:-6px"></i> +${VT.coins}</p>
+        <p>${VT.right} von ${VT.items.length} Verben richtig.</p></div>
+        <button class="btn big" data-a="vt-start">Noch eine Runde</button><button class="btn big ghost" data-a="vt-end">Fertig</button></div>`;
+    }
+    const v = vByInf(VT.items[VT.i]);
+    const fields = vtFields(VT.mode);
+    const shown = VT.state !== "ask";
+    const pct = Math.round((VT.i / VT.items.length) * 100);
+    const promptMain = VT.mode === "de" ? esc(v.de) : `<span lang="en">${esc(v.inf)}</span>`;
+    const promptSub = VT.mode === "de" ? "Wie heißen die drei Formen auf Englisch?" : esc(v.de);
+    const inputs = fields.map((f) => {
+      const r = VT.res && VT.res[f];
+      return `<label class="field"><span>${FIELD_LABEL[f]}</span><input name="${f}" lang="en" autocapitalize="off" autocorrect="off" spellcheck="false" ${shown ? "disabled" : ""} class="${r === true ? "in-ok" : r === false ? "in-no" : ""}" value="${esc((VT.typed && VT.typed[f]) || "")}">
+        ${shown && r === false ? `<span class="v-sol">Richtig: <b lang="en">${esc(v[f])}</b></span>` : ""}</label>`;
+    }).join("");
+    const allOk = VT.res && fields.every((f) => VT.res[f]);
+    return `<div class="quiz-top"><button class="iconbtn" data-a="vt-end" aria-label="Trainer beenden">${I.close}</button>
+        <div class="progress"><i style="width:${pct}%"></i></div><span class="pill"><i class="coin"></i> ${VT.coins}</span></div>
+      <div class="karte" style="--c:var(--f2)"><span class="fachtag">${VT_MODES[VT.mode]}</span>
+        <button class="iconbtn speak" data-a="say" data-t="${esc(v.inf)}" aria-label="Vorlesen">${I.speaker}</button>
+        <p class="prompt">${promptMain}</p><p class="muted">${promptSub}</p></div>
+      <form class="stack" data-form="vt" autocomplete="off">${inputs}
+        ${shown ? `<div class="feedback ${allOk ? "good" : "bad"}">${allOk ? "Richtig!" : "Nicht ganz."} <span class="sol" lang="en">${esc(v.inf)} – ${esc(v.past)} – ${esc(v.pp)}</span></div>
+          <button class="btn big" type="button" data-a="vt-next" id="vtnext">Weiter</button>` : `<button class="btn big" type="submit">Prüfen</button>`}
+      </form>`;
+  }
+  function afterTrainerRender() {
+    if (!VT || VT.i >= VT.items.length) return;
+    if (VT.state === "ask") { const inp = document.querySelector('[data-form="vt"] input'); if (inp) inp.focus(); }
+    else { const nb = $("#vtnext"); if (nb) nb.focus(); }
+  }
+  function vtCheckField(input, target) {
+    const n = (s) => String(s).toLowerCase().replace(/[’']/g, "'").replace(/\s+/g, " ").trim();
+    const a = n(input); if (!a) return false;
+    const opts = target.split(" / ").map(n);
+    if (opts.includes(a)) return true;
+    // "was / were", "was/were", "was, were" – beide Formen genannt
+    const parts = a.split(/\s*[\/,]\s*|\s+or\s+|\s+and\s+/).filter(Boolean);
+    return parts.length > 1 && parts.every((p) => opts.includes(p));
+  }
+  function vtSubmit(f) {
+    const v = vByInf(VT.items[VT.i]);
+    const fields = vtFields(VT.mode);
+    VT.typed = {}; VT.res = {};
+    fields.forEach((k) => { VT.typed[k] = f[k].value; VT.res[k] = vtCheckField(f[k].value, v[k]); });
+    const ok = fields.every((k) => VT.res[k]);
+    const st = S.verbStats[v.inf] || (S.verbStats[v.inf] = { r: 0, w: 0, last: 0 });
+    if (ok) { st.r++; st.last = 1; VT.right++; VT.coins++; } else { st.w++; st.last = 0; }
+    S.log[today()] = (S.log[today()] || 0) + 1;
+    VT.state = "shown"; save(); render();
+    if (S.settings.autoSpeak) speak(v.inf + ", " + first(v.past) + ", " + first(v.pp));
+  }
+  function vtNext() {
+    VT.i++; VT.state = "ask"; VT.res = null; VT.typed = null;
+    if (VT.i >= VT.items.length) {
+      if (VT.items.length >= 5) VT.coins += 5;
+      S.profile.coins += VT.coins;
+      const t = today();
+      if (S.profile.lastDay !== t) { S.profile.streak = S.profile.lastDay === addDays(t, -1) ? (S.profile.streak || 0) + 1 : 1; S.profile.lastDay = t; }
+      save();
+    }
+    render(); window.scrollTo(0, 0);
+  }
+
   /* ---------- Dialoge ---------- */
   function sheet(html, onMount) {
     closeSheet();
@@ -581,7 +788,7 @@
       if (!d || d.version !== 1 || !Array.isArray(d.words) || !Array.isArray(d.units)) { toast("Das ist keine WortSchatz-Sicherung."); return; }
       const ok = await confirmBox("Sicherung laden?", "Die Sicherung enthält " + d.words.length + " Wörter. Alles, was jetzt in der App steht, wird ersetzt.", "Laden");
       if (!ok) return;
-      S = d; save(); toast("Sicherung geladen"); go("start");
+      S = d; migrate(); save(); toast("Sicherung geladen"); go("start");
     };
     rd.readAsText(file);
   }
@@ -616,6 +823,16 @@
         break;
       }
       case "say": speak(el.dataset.t); break;
+      case "gpage": closeSheet(); gram[el.dataset.sec] = el.dataset.id; go(el.dataset.sec); break;
+      case "vfilter": vFilter = el.dataset.v; render(); break;
+      case "verb": verbSheet(vByInf(id)); break;
+      case "vt-one": closeSheet(); vtStart([vByInf(id)]); break;
+      case "vtset": S.settings.vt[el.dataset.k] = el.dataset.v; save(); render(); break;
+      case "vt-start": vtStart(); break;
+      case "vt-next": vtNext(); break;
+      case "vt-end":
+        if (VT && VT.i < VT.items.length && VT.coins) { S.profile.coins += VT.coins; save(); }
+        VT = null; render(); break;
       case "qset": {
         const k = el.dataset.k; let v = el.dataset.v; if (k === "len") v = Number(v);
         S.settings.quiz[k] = v; save(); render(); break;
@@ -645,7 +862,7 @@
       case "install": if (installEvt) { installEvt.prompt(); installEvt = null; render(); } break;
       case "reset":
         if (await confirmBox("Wirklich alles löschen?", "Alle Wörter, Münzen und der Fortschritt werden gelöscht. Das lässt sich nur mit einer Sicherung rückgängig machen.", "Alles löschen", true)) {
-          S = freshState(); save(); go("start"); toast("Alles zurückgesetzt");
+          S = freshState(); migrate(); save(); go("start"); toast("Alles zurückgesetzt");
         }
         break;
     }
@@ -654,6 +871,11 @@
     if (e.target.id === "importfile" && e.target.files[0]) doImport(e.target.files[0]);
   });
   document.addEventListener("input", (e) => {
+    if (e.target.id === "vsearch") {
+      vSearch = e.target.value;
+      const l = $("#vlist"); if (l) l.innerHTML = verbListHtml(VERBS.filter(verbMatches));
+      return;
+    }
     if (e.target.id === "search") {
       search = e.target.value;
       const pos = e.target.selectionStart;
@@ -667,6 +889,8 @@
     if (kind === "name") {
       e.preventDefault(); S.profile.name = f.n.value.trim(); save(); render();
       toast(S.profile.name ? "Hallo, " + S.profile.name + "!" : "Gespeichert");
+    } else if (kind === "vt") {
+      e.preventDefault(); vtSubmit(f);
     } else if (kind === "type") {
       e.preventDefault();
       const { it, w } = cur();

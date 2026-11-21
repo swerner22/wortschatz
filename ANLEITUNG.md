@@ -21,6 +21,9 @@ Der Code liegt im Repository `swerner22/wortschatz`. Die Vokabeln deiner Tochter
 - **Extra-Wortschatz:** acht Themenlisten mit allgemeinem Grundwortschatz (Schule, Familie, Tiere …). Sie sind zunächst ausgeschaltet und lassen sich unter „Wörter“ einzeln einschalten.
 - **Karteikasten:** Jede Karte wandert bei richtiger Antwort ein Fach weiter (Abfrage nach 1, 2, 4, 7 und 14 Tagen) und bei falscher Antwort zurück in Fach 1. Auf der Startseite steht, wie viele Wörter heute fällig sind.
 - **Üben:** Karteikarte (selbst einschätzen), Auswählen (4 Möglichkeiten) oder Schreiben (mit Rechtschreibprüfung). Bei „Fast!“ war nur ein Buchstabe falsch. Falsch beantwortete Wörter kommen am Ende der Runde noch einmal dran.
+- **Zeiten:** alle englischen Zeiten mit Zeitstrahl, Bildung (Aussage, Verneinung, Frage), Verwendung, Signalwörtern und Beispielen zum Anhören. „Starte hier“ markiert die Zeiten, die zuerst drankommen.
+- **Pronomen:** Personalpronomen, Objektform, Possessivbegleiter und -pronomen, Reflexivpronomen, this/that/these/those, Fragewörter sowie some/any.
+- **Verben:** 150 unregelmäßige Verben mit Suche und Filtern (Grundverben, 3× gleich, zuletzt falsch). Tippen auf ein Verb zeigt, wie es in den Zeiten aussieht. Im **Trainer** tippt man die 2. und 3. Form ein, 10 Verben pro Runde, mit Münzen.
 - **Vorlesen:** Das Lautsprecher-Symbol nutzt die englische Stimme des Tablets. Falls keine englische Stimme klingt: Android-Einstellungen → Sprache → Text-in-Sprache → Google-Sprachausgabe → Englisch (UK) installieren.
 - **Belohnung:** 1 Münze pro richtiger Antwort, 5 Bonusmünzen pro Runde, dazu eine Tages-Serie 🔥.
 

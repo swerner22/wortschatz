@@ -1,8 +1,8 @@
 // Service Worker: hält die App offline verfügbar.
 // Bei jeder Änderung an der App VERSION hochzählen, damit das Tablet die neue Fassung lädt.
-const VERSION = "wortschatz-v1";
+const VERSION = "wortschatz-v2";
 const FILES = [
-  "./", "index.html", "app.css", "app.js", "starter.js", "manifest.webmanifest",
+  "./", "index.html", "app.css", "app.js", "starter.js", "grammar.js", "verbs.js", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png",
   "fonts/fredoka-latin-500-normal.woff2", "fonts/fredoka-latin-600-normal.woff2",
   "fonts/nunito-latin-400-normal.woff2", "fonts/nunito-latin-700-normal.woff2"
