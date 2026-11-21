@@ -681,14 +681,29 @@
   /* ---------- Sammel-Eingabe ---------- */
   function parseBulk(text, unit) {
     const seen = new Set(S.words.filter((w) => w.unit === unit).map((w) => norm(w.en, "en")));
-    return text.split(/\r?\n/).map((raw) => raw.trim()).filter(Boolean).map((line) => {
+    // Feld-Trennung wie in CSV: Anführungszeichen schützen Trennzeichen im Text
+    const splitCsv = (line, d) => {
+      const out = []; let cur = "", q = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (q) { if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+        else if (c === '"' && !cur.trim()) { q = true; cur = ""; }
+        else if (c === d) { out.push(cur); cur = ""; }
+        else cur += c;
+      }
+      out.push(cur); return out;
+    };
+    const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/).map((raw) => raw.trim()).filter(Boolean);
+    // Kopfzeile wie "Englisch;Deutsch;Erläuterung" überspringen
+    if (lines.length && /^"?(englisch|english|en)"?\s*[;,\t=]/i.test(lines[0])) lines.shift();
+    return lines.map((line) => {
       let parts;
-      if (line.includes("\t")) parts = line.split("\t");
-      else if (line.includes(";")) parts = line.split(";");
+      if (line.includes("\t")) parts = splitCsv(line, "\t");
+      else if (line.includes(";")) parts = splitCsv(line, ";");
       else if (line.includes(" = ")) parts = line.split(" = ");
       else if (/\s[–—-]\s/.test(line)) { const m = line.match(/^(.*?)\s[–—-]\s(.*)$/); parts = [m[1], m[2]]; }
       else parts = [line];
-      parts = parts.map((p) => p.trim().replace(/^"(.*)"$/, "$1").trim());
+      parts = parts.map((p) => p.trim());
       const [en = "", de = "", ex = ""] = parts;
       let status = "ok";
       if (!en || !de) status = "incomplete";
@@ -712,7 +727,7 @@
     sheet(`<form class="stack" data-form="bulk" autocomplete="off">
       <div class="row between"><h2>Viele Wörter eintragen</h2><button type="button" class="iconbtn" data-a="close" aria-label="Schließen">${I.close}</button></div>
       <label class="field"><span>In welche Unit?</span><select name="unit" id="bulk-unit">${unitOptions(unit)}</select></label>
-      <label class="field"><span>Ein Wort pro Zeile: Englisch ; Deutsch ; Beispielsatz (freiwillig)</span>
+      <label class="field"><span>Ein Wort pro Zeile: Englisch ; Deutsch ; Beispielsatz oder Erläuterung (freiwillig)</span>
         <textarea name="text" id="bulk-text" rows="8" lang="en" autocapitalize="off" spellcheck="false" placeholder="beach ; Strand&#10;(to) meet ; kennenlernen, treffen ; Nice to meet you!&#10;seagull = Möwe"></textarea></label>
       <p class="hint">Trennen geht mit <b>;</b>, mit <b>=</b> oder mit einem Strich mit Leerzeichen davor und danach. Du kannst auch zwei oder drei Spalten aus Excel oder Google Tabellen hineinkopieren.</p>
       <div class="row wrap"><button type="button" class="btn ghost" data-a="bulk-file">Aus Datei laden (.csv, .txt)</button><input type="file" id="bulk-file" accept=".csv,.txt,text/plain,text/csv" hidden></div>
