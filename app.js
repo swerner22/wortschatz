@@ -780,9 +780,14 @@
     if (!r.ok) throw new Error("GitHub antwortet mit Fehler " + r.status + ".");
     return raw ? r.text() : r.json();
   }
+  // Jede Datei wird eine eigene Liste: "221_Vokabeln.csv" -> "Vokabeln: Seite 221"
+  function titleForPath(path) {
+    const file = path.split("/").pop().replace(/\.(csv|txt)$/i, "");
+    const page = file.match(/^\s*(\d+)/);
+    return page ? "Vokabeln: Seite " + page[1] : file.replace(/[_]+/g, " ").trim();
+  }
   function unitForPath(path) {
-    const parts = path.split("/");
-    const title = parts.length > 1 ? parts[parts.length - 2].trim() : "Neue Vokabeln";
+    const title = titleForPath(path);
     let u = S.units.find((x) => x.title.trim().toLowerCase() === title.toLowerCase());
     if (!u) {
       u = { id: "u-" + uid(), title, group: "buch", active: true };
@@ -795,8 +800,11 @@
     const rows = parseBulk(text, "\u0000").filter((r) => r.status !== "incomplete");
     let added = 0, changed = 0; const t = today(), base = Date.now();
     rows.forEach((r, i) => {
-      const w = S.words.find((x) => x.unit === u.id && norm(x.en, "en") === norm(r.en, "en"));
+      const same = (x) => norm(x.en, "en") === norm(r.en, "en");
+      // Erst im Ziel suchen, dann ein früher aus derselben Datei geladenes Wort (z. B. noch in "Unit 1") herüberholen
+      const w = S.words.find((x) => x.unit === u.id && same(x)) || S.words.find((x) => x.src === path && same(x));
       if (w) {
+        if (w.unit !== u.id) w.unit = u.id;
         if (w.de !== r.de || (w.ex || "") !== r.ex) { w.de = r.de; w.ex = r.ex; changed++; }
       } else {
         const nw = newWord(r.en, r.de, u.id, r.ex, t); nw.created = base + i; nw.src = path; S.words.push(nw); added++;
@@ -807,6 +815,8 @@
   async function syncNow(manual) {
     const st = syncState();
     if (!getToken() || syncing) return;
+    // Zuordnung geändert (eine Liste pro Datei): alle Dateien einmal neu einlesen
+    if (st.map !== 2) { st.files = {}; st.map = 2; st.last = 0; }
     if (!manual && Date.now() - st.last < 5 * 60 * 1000) return; // höchstens alle 5 Minuten von selbst
     if (!navigator.onLine) { if (manual) toast("Kein Internet. Später noch einmal versuchen."); return; }
     syncing = true;
@@ -851,7 +861,7 @@
     const when = st.last ? new Date(st.last).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "noch nie";
     return `<div class="panel stack"><h3>Vokabeln automatisch laden</h3>
       ${on ? `<p class="small">${st.error ? `<span class="warn" style="display:inline">${esc(st.error)}</span>` : `Verbunden mit <b>${esc(st.repo)}</b>. ${st.count != null ? st.count + (st.count === 1 ? " Datei" : " Dateien") + ". " : ""}`}Zuletzt geprüft: ${when}.</p>
-        <p class="muted small">Neue oder geänderte Vokabeln kommen beim Öffnen der App von selbst. Der Ordnername im Repository wird zur Unit, z. B. „Unit 1/221_Vokabeln.csv“.</p>
+        <p class="muted small">Neue oder geänderte Vokabeln kommen beim Öffnen der App von selbst. Jede Datei wird eine eigene Liste, z. B. „221_Vokabeln.csv“ → „Vokabeln: Seite 221“.</p>
         <div class="row wrap"><button class="btn" data-a="sync-now">Jetzt abrufen</button><button class="btn ghost" data-a="sync-off">Verbindung trennen</button></div>`
       : `<p class="muted small">Hier kann ein Erwachsener die App mit einem privaten GitHub-Repository verbinden. Dann erscheinen neue Vokabel-Listen automatisch.</p>
         <form class="stack" data-form="sync">
@@ -1119,7 +1129,7 @@
   window.addEventListener("appinstalled", () => { installEvt = null; toast("Installiert!"); });
 
   /* ---------- Updates ---------- */
-  const APP_VERSION = "6 (21.11.2026)";
+  const APP_VERSION = "7 (21.11.2026)";
   let updateReady = false;
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     const hadController = !!navigator.serviceWorker.controller;

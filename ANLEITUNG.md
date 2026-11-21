@@ -41,7 +41,7 @@ Dateien im Repository ersetzen und in `sw.js` die Zeile `const VERSION = "wortsc
 
 Vokabel-Listen (CSV) liegen in einem **privaten** GitHub-Repository `swerner22/wortschatz-vokabeln`. Die App auf dem Tablet holt neue oder geänderte Dateien beim Öffnen von selbst ab, höchstens alle 5 Minuten. Mit „Ich → Jetzt abrufen“ geht es sofort.
 
-- **Ordner = Unit:** `Unit 1/221_Vokabeln.csv` landet in „Unit 1“. Gibt es die Unit noch nicht, legt die App sie an. Dateien ohne Ordner landen in „Neue Vokabeln“.
+- **Eine Liste pro Datei:** Jede CSV wird in der App eine eigene Liste. Beginnt der Dateiname mit einer Zahl, heißt die Liste „Vokabeln: Seite …“, z. B. `221_Vokabeln.csv` → „Vokabeln: Seite 221“. Ordner im Repository spielen keine Rolle.
 - **Format:** wie bei der Sammel-Eingabe, Kopfzeile `Englisch;Deutsch;Erläuterung` erlaubt.
 - **Änderungen:** Wird eine Datei geändert, übernimmt die App neue Wörter und korrigierte Übersetzungen. Der Lernstand bleibt erhalten. Aus der Datei gelöschte Wörter bleiben in der App.
 - **Lese-Schlüssel:** Das Tablet braucht einmalig einen GitHub-Token mit reinem Lesezugriff auf nur dieses Repository. Er wird nur auf dem Tablet gespeichert und ist nicht in Sicherungsdateien enthalten.
