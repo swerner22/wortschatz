@@ -1,6 +1,6 @@
 // Service Worker: hält die App offline verfügbar.
 // Bei jeder Änderung an der App VERSION hochzählen, damit das Tablet die neue Fassung lädt.
-const VERSION = "wortschatz-v5";
+const VERSION = "wortschatz-v6";
 const FILES = [
   "./", "index.html", "app.css", "app.js", "starter.js", "grammar.js", "verbs.js", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png",
@@ -17,6 +17,8 @@ self.addEventListener("activate", (e) => {
 // Erst aus dem Netz (damit Updates ankommen), ohne Netz aus dem Speicher.
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
+  // Nur die App-Dateien selbst zwischenspeichern, keine Anfragen an andere Server (z. B. GitHub)
+  if (new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(
     // cache: "no-cache" fragt immer beim Server nach, ob es eine neuere Fassung gibt
     fetch(e.request, { cache: "no-cache" }).then((res) => {

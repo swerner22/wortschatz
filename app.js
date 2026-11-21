@@ -471,6 +471,7 @@
           <button class="btn ghost" data-a="import">Sicherung laden</button></div>
         <input type="file" id="importfile" accept=".json,application/json" hidden></div>
       ${installEvt ? `<button class="btn big ghost" data-a="install">Als App auf den Startbildschirm</button>` : ""}
+      ${syncPanel()}
       <div class="panel stack"><h3>Für Eltern</h3>
         <p class="muted small">Die App braucht kein Konto und schickt keine Daten ins Internet. Alles liegt im Browser-Speicher dieses Geräts. Wenn die Browserdaten von Chrome gelöscht werden, sind die Wörter weg. Dann hilft nur die Sicherungsdatei.</p>
         <p class="muted small">App-Version ${APP_VERSION}</p>
@@ -757,7 +758,111 @@
     go("unit", unit);
   }
 
+  /* ---------- Vokabeln automatisch aus einem privaten GitHub-Repository laden ---------- */
+  // Der Lese-Schlüssel liegt bewusst NICHT in S, damit er nie in einer Sicherungsdatei landet.
+  const TOKEN_KEY = "wortschatz.token";
+  const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; } };
+  const setToken = (t) => { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch (e) { /* egal */ } };
+  function syncState() {
+    S.sync = S.sync || { repo: "swerner22/wortschatz-vokabeln", files: {}, last: 0, error: "", added: 0 };
+    return S.sync;
+  }
+  let syncing = false;
+  async function gh(path, raw) {
+    const r = await fetch("https://api.github.com/repos/" + syncState().repo + path, {
+      headers: { Authorization: "Bearer " + getToken(), Accept: raw ? "application/vnd.github.raw" : "application/vnd.github+json" },
+      cache: "no-store"
+    });
+    if (r.status === 401) throw new Error("Der Schlüssel ist ungültig oder abgelaufen.");
+    if (r.status === 403) throw new Error("Zu viele Anfragen oder keine Berechtigung. Später noch einmal versuchen.");
+    if (r.status === 404) throw new Error("Repository nicht gefunden. Name prüfen und ob der Schlüssel dafür freigegeben ist.");
+    if (r.status === 409) throw new Error("Das Repository ist noch leer.");
+    if (!r.ok) throw new Error("GitHub antwortet mit Fehler " + r.status + ".");
+    return raw ? r.text() : r.json();
+  }
+  function unitForPath(path) {
+    const parts = path.split("/");
+    const title = parts.length > 1 ? parts[parts.length - 2].trim() : "Neue Vokabeln";
+    let u = S.units.find((x) => x.title.trim().toLowerCase() === title.toLowerCase());
+    if (!u) {
+      u = { id: "u-" + uid(), title, group: "buch", active: true };
+      S.units.splice(S.units.filter((x) => x.group === "buch").length, 0, u);
+    }
+    return u;
+  }
+  function mergeFile(text, path) {
+    const u = unitForPath(path);
+    const rows = parseBulk(text, "\u0000").filter((r) => r.status !== "incomplete");
+    let added = 0, changed = 0; const t = today(), base = Date.now();
+    rows.forEach((r, i) => {
+      const w = S.words.find((x) => x.unit === u.id && norm(x.en, "en") === norm(r.en, "en"));
+      if (w) {
+        if (w.de !== r.de || (w.ex || "") !== r.ex) { w.de = r.de; w.ex = r.ex; changed++; }
+      } else {
+        const nw = newWord(r.en, r.de, u.id, r.ex, t); nw.created = base + i; nw.src = path; S.words.push(nw); added++;
+      }
+    });
+    return { added, changed };
+  }
+  async function syncNow(manual) {
+    const st = syncState();
+    if (!getToken() || syncing) return;
+    if (!manual && Date.now() - st.last < 5 * 60 * 1000) return; // höchstens alle 5 Minuten von selbst
+    if (!navigator.onLine) { if (manual) toast("Kein Internet. Später noch einmal versuchen."); return; }
+    syncing = true;
+    if (manual) toast("Suche nach neuen Vokabeln …");
+    try {
+      const repo = await gh("");
+      const tree = await gh("/git/trees/" + encodeURIComponent(repo.default_branch || "main") + "?recursive=1");
+      const csvs = (tree.tree || []).filter((n) => n.type === "blob" && /\.(csv|txt)$/i.test(n.path));
+      let added = 0, changed = 0, files = 0;
+      for (const n of csvs) {
+        if (st.files[n.path] === n.sha) continue;
+        const text = await gh("/contents/" + n.path.split("/").map(encodeURIComponent).join("/") + "?ref=" + encodeURIComponent(repo.default_branch || "main"), true);
+        const res = mergeFile(text, n.path);
+        added += res.added; changed += res.changed; files++;
+        st.files[n.path] = n.sha;
+      }
+      st.last = Date.now(); st.error = ""; st.count = csvs.length;
+      save();
+      if (added || changed) toast((added ? added + (added === 1 ? " neues Wort" : " neue Wörter") : "") + (added && changed ? ", " : "") + (changed ? changed + " geändert" : "") + " – von Papa");
+      else if (manual) toast("Alles aktuell. Keine neuen Vokabeln.");
+      if (added || changed || view === "ich") render();
+    } catch (e) {
+      st.error = e.message || "Unbekannter Fehler"; st.last = Date.now(); save();
+      if (manual || view === "ich") { toast(st.error); render(); }
+    } finally { syncing = false; }
+  }
+  // Einrichtung per Link: …/wortschatz/#token=github_pat_…&repo=besitzer/name
+  function tokenFromLink() {
+    const h = location.hash.replace(/^#/, "");
+    if (!/(^|&)token=/.test(h)) return;
+    const p = new URLSearchParams(h);
+    if (p.get("token")) setToken(p.get("token").trim());
+    if (p.get("repo")) syncState().repo = p.get("repo").trim();
+    syncState().last = 0; save();
+    history.replaceState(null, "", location.pathname + location.search);
+    setTimeout(() => { toast("Verbunden. Vokabeln werden geladen …"); syncNow(true); }, 400);
+  }
+  tokenFromLink();
+  window.addEventListener("hashchange", tokenFromLink);
+  function syncPanel() {
+    const st = syncState(); const on = !!getToken();
+    const when = st.last ? new Date(st.last).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "noch nie";
+    return `<div class="panel stack"><h3>Vokabeln automatisch laden</h3>
+      ${on ? `<p class="small">${st.error ? `<span class="warn" style="display:inline">${esc(st.error)}</span>` : `Verbunden mit <b>${esc(st.repo)}</b>. ${st.count != null ? st.count + (st.count === 1 ? " Datei" : " Dateien") + ". " : ""}`}Zuletzt geprüft: ${when}.</p>
+        <p class="muted small">Neue oder geänderte Vokabeln kommen beim Öffnen der App von selbst. Der Ordnername im Repository wird zur Unit, z. B. „Unit 1/221_Vokabeln.csv“.</p>
+        <div class="row wrap"><button class="btn" data-a="sync-now">Jetzt abrufen</button><button class="btn ghost" data-a="sync-off">Verbindung trennen</button></div>`
+      : `<p class="muted small">Hier kann ein Erwachsener die App mit einem privaten GitHub-Repository verbinden. Dann erscheinen neue Vokabel-Listen automatisch.</p>
+        <form class="stack" data-form="sync">
+          <label class="field"><span>Repository</span><input name="repo" value="${esc(st.repo)}" autocapitalize="off" spellcheck="false"></label>
+          <label class="field"><span>Lese-Schlüssel (Token)</span><input name="token" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="github_pat_…"></label>
+          <button class="btn" type="submit">Verbinden</button></form>`}
+    </div>`;
+  }
+
   /* ---------- Dialoge ---------- */
+
 
   function sheet(html, onMount) {
     closeSheet();
@@ -915,6 +1020,12 @@
       case "vt-start": vtStart(); break;
       case "vt-next": vtNext(); break;
       case "check-update": checkUpdate(); break;
+      case "sync-now": syncNow(true); break;
+      case "sync-off":
+        if (await confirmBox("Verbindung trennen?", "Die schon geladenen Wörter bleiben in der App. Neue Listen kommen dann nicht mehr automatisch.", "Trennen")) {
+          setToken(""); syncState().files = {}; syncState().error = ""; save(); render();
+        }
+        break;
       case "vt-end":
         if (updateReady) { if (VT && VT.coins && VT.i < VT.items.length) { S.profile.coins += VT.coins; save(); } location.reload(); break; }
         if (VT && VT.i < VT.items.length && VT.coins) { S.profile.coins += VT.coins; save(); }
@@ -982,6 +1093,11 @@
     if (kind === "name") {
       e.preventDefault(); S.profile.name = f.n.value.trim(); save(); render();
       toast(S.profile.name ? "Hallo, " + S.profile.name + "!" : "Gespeichert");
+    } else if (kind === "sync") {
+      e.preventDefault();
+      const tok = f.token.value.trim(), repo = f.repo.value.trim();
+      if (!tok || !/^[\w.-]+\/[\w.-]+$/.test(repo)) { toast("Bitte Repository (besitzer/name) und Schlüssel eintragen."); return; }
+      setToken(tok); syncState().repo = repo; syncState().last = 0; save(); render(); syncNow(true);
     } else if (kind === "bulk") {
       e.preventDefault(); bulkSave(f);
     } else if (kind === "vt") {
@@ -1003,7 +1119,7 @@
   window.addEventListener("appinstalled", () => { installEvt = null; toast("Installiert!"); });
 
   /* ---------- Updates ---------- */
-  const APP_VERSION = "5 (21.11.2026)";
+  const APP_VERSION = "6 (21.11.2026)";
   let updateReady = false;
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     const hadController = !!navigator.serviceWorker.controller;
@@ -1025,6 +1141,10 @@
     try { const reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch (e) { /* offline */ }
     setTimeout(() => location.reload(), 1200);
   }
+
+  setTimeout(() => syncNow(false), 1500);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") syncNow(false); });
+  window.addEventListener("online", () => syncNow(false));
 
   // Für Tests im Browser
   window.__ws = { get state() { return S; }, check, norm, grade, addDays };

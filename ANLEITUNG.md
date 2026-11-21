@@ -36,3 +36,13 @@ Unter **Ich → Sicherung schicken** entsteht eine Datei, die man z. B. per What
 ## 5. App später ändern
 
 Dateien im Repository ersetzen und in `sw.js` die Zeile `const VERSION = "wortschatz-v1";` hochzählen (v2, v3 …). Beim nächsten Öffnen mit Internet lädt das Tablet die neue Fassung. Die eingetragenen Wörter bleiben erhalten.
+
+## 6. Vokabeln automatisch aufs Tablet (privates Repository)
+
+Vokabel-Listen (CSV) liegen in einem **privaten** GitHub-Repository `swerner22/wortschatz-vokabeln`. Die App auf dem Tablet holt neue oder geänderte Dateien beim Öffnen von selbst ab, höchstens alle 5 Minuten. Mit „Ich → Jetzt abrufen“ geht es sofort.
+
+- **Ordner = Unit:** `Unit 1/221_Vokabeln.csv` landet in „Unit 1“. Gibt es die Unit noch nicht, legt die App sie an. Dateien ohne Ordner landen in „Neue Vokabeln“.
+- **Format:** wie bei der Sammel-Eingabe, Kopfzeile `Englisch;Deutsch;Erläuterung` erlaubt.
+- **Änderungen:** Wird eine Datei geändert, übernimmt die App neue Wörter und korrigierte Übersetzungen. Der Lernstand bleibt erhalten. Aus der Datei gelöschte Wörter bleiben in der App.
+- **Lese-Schlüssel:** Das Tablet braucht einmalig einen GitHub-Token mit reinem Lesezugriff auf nur dieses Repository. Er wird nur auf dem Tablet gespeichert und ist nicht in Sicherungsdateien enthalten.
+- **Einrichten per Link:** `https://swerner22.github.io/wortschatz/#token=DEIN_TOKEN` einmal auf dem Tablet in Chrome öffnen, alternativ Token unter „Ich → Vokabeln automatisch laden“ eintragen.
