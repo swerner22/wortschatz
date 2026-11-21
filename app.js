@@ -473,6 +473,8 @@
       ${installEvt ? `<button class="btn big ghost" data-a="install">Als App auf den Startbildschirm</button>` : ""}
       <div class="panel stack"><h3>Für Eltern</h3>
         <p class="muted small">Die App braucht kein Konto und schickt keine Daten ins Internet. Alles liegt im Browser-Speicher dieses Geräts. Wenn die Browserdaten von Chrome gelöscht werden, sind die Wörter weg. Dann hilft nur die Sicherungsdatei.</p>
+        <p class="muted small">App-Version ${APP_VERSION}</p>
+        <div class="row wrap"><button class="btn ghost" data-a="check-update">Nach Updates suchen</button></div>
         <button class="linkbtn" data-a="reset">Alles löschen und neu anfangen</button></div>
     </div>`;
   }
@@ -912,7 +914,9 @@
       case "vtset": S.settings.vt[el.dataset.k] = el.dataset.v; save(); render(); break;
       case "vt-start": vtStart(); break;
       case "vt-next": vtNext(); break;
+      case "check-update": checkUpdate(); break;
       case "vt-end":
+        if (updateReady) { if (VT && VT.coins && VT.i < VT.items.length) { S.profile.coins += VT.coins; save(); } location.reload(); break; }
         if (VT && VT.i < VT.items.length && VT.coins) { S.profile.coins += VT.coins; save(); }
         VT = null; render(); break;
       case "qset": {
@@ -935,7 +939,7 @@
       }
       case "override": Q.result = "ok"; render(); break;
       case "next": nextItem(); break;
-      case "done": Q = null; go("start"); break;
+      case "done": Q = null; if (updateReady) { location.reload(); break; } go("start"); break;
       case "rate": S.settings.rate = Number(el.dataset.v); save(); render(); speak("Hello! Nice to meet you."); break;
       case "autospeak": S.settings.autoSpeak = el.checked; save(); break;
       case "export": doExport(); break;
@@ -998,8 +1002,28 @@
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; if (view === "start" || view === "ich") render(); });
   window.addEventListener("appinstalled", () => { installEvt = null; toast("Installiert!"); });
 
+  /* ---------- Updates ---------- */
+  const APP_VERSION = "5 (21.11.2026)";
+  let updateReady = false;
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
+    const hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((reg) => {
+      // Beim Zurückkehren in die App nach einer neuen Fassung suchen
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
+    }).catch(() => {});
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadController || updateReady) return;
+      updateReady = true;
+      // Nicht mitten in einer Übung neu laden
+      if (view === "quiz" || (view === "verben" && VT && VT.i < VT.items.length)) toast("Neue Version geladen. Sie startet nach der Übung.");
+      else location.reload();
+    });
+  }
+  async function checkUpdate() {
+    if (!("serviceWorker" in navigator)) { location.reload(); return; }
+    toast("Suche nach Updates …");
+    try { const reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch (e) { /* offline */ }
+    setTimeout(() => location.reload(), 1200);
   }
 
   // Für Tests im Browser
