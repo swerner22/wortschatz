@@ -63,6 +63,11 @@
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
   const unitById = (id) => S.units.find((u) => u.id === id);
+  // Reihenfolge im Buch: "Welcome" zuerst, sonst nach Namen mit Zahlen in natürlicher Reihenfolge
+  // ("Vokabeln: Seite 214" vor "Vokabeln: Seite 221", "Unit 2" vor "Unit 10")
+  const unitRank = (u) => (/^\s*welcome/i.test(u.title) ? 0 : 1);
+  const unitOrder = (a, b) => unitRank(a) - unitRank(b) || a.title.localeCompare(b.title, "de", { numeric: true, sensitivity: "base" });
+  const bookUnits = () => S.units.filter((u) => u.group === "buch").sort(unitOrder);
   const wordsOf = (id) => S.words.filter((w) => w.unit === id);
   const activeWords = () => { const act = new Set(S.units.filter((u) => u.active).map((u) => u.id)); return S.words.filter((w) => act.has(w.unit)); };
   const dueWords = () => { const t = today(); return activeWords().filter((w) => w.due <= t); };
@@ -218,7 +223,7 @@
   function vUeben() {
     const q = S.settings.quiz;
     const due = dueWords().length;
-    const unitsWithWords = S.units.filter((u) => wordsOf(u.id).length);
+    const unitsWithWords = [...bookUnits(), ...S.units.filter((u) => u.group !== "buch")].filter((u) => wordsOf(u.id).length);
     if (!S.words.length) return `<div class="stack"><h1>Üben</h1>${emptyWords()}</div>`;
     const chip = (key, val, label) => `<button class="chip" data-a="qset" data-k="${key}" data-v="${esc(val)}" aria-pressed="${String(q[key]) === String(val)}">${label}</button>`;
     return `<div class="stack">
@@ -404,7 +409,7 @@
       <button class="iconbtn" data-a="edit" data-id="${w.id}" aria-label="${esc(w.en)} bearbeiten">${I.edit}</button></li>`;
   }
   function vWoerter() {
-    const book = S.units.filter((u) => u.group === "buch");
+    const book = bookUnits();
     const extra = S.units.filter((u) => u.group === "extra");
     let list;
     if (search.trim()) {
@@ -904,7 +909,7 @@
 
   function unitOptions(sel) {
     const opt = (u) => `<option value="${u.id}" ${u.id === sel ? "selected" : ""}>${esc(u.title)}</option>`;
-    return `<optgroup label="Mein Englischbuch">${S.units.filter((u) => u.group === "buch").map(opt).join("")}</optgroup>
+    return `<optgroup label="Mein Englischbuch">${bookUnits().map(opt).join("")}</optgroup>
       <optgroup label="Extra-Wortschatz">${S.units.filter((u) => u.group === "extra").map(opt).join("")}</optgroup>`;
   }
   function wordSheet(w, preset) {
@@ -1129,7 +1134,7 @@
   window.addEventListener("appinstalled", () => { installEvt = null; toast("Installiert!"); });
 
   /* ---------- Updates ---------- */
-  const APP_VERSION = "7 (21.11.2026)";
+  const APP_VERSION = "8 (21.11.2026)";
   let updateReady = false;
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     const hadController = !!navigator.serviceWorker.controller;
