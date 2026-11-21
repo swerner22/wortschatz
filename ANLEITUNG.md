@@ -17,6 +17,7 @@ Der Code liegt im Repository `swerner22/wortschatz`. Die Vokabeln deiner Tochter
 ## 3. So funktioniert die App
 
 - **Wörter eintragen:** Knopf „Neues Wort“. Englisch, Deutsch, Unit und optional einen Beispielsatz eingeben. Mehrere deutsche Bedeutungen mit Komma trennen. „Speichern und weiter“ hält die Unit fest, so geht eine ganze Vokabelseite schnell.
+- **Viele Wörter auf einmal:** Unter „Wörter“ oder in einer Unit auf „Viele Wörter eintragen“ tippen. Ein Wort pro Zeile im Format `Englisch ; Deutsch ; Beispielsatz` (Trennung auch mit `=` oder ` - `). Man kann auch zwei oder drei Spalten aus Excel oder Google Tabellen hineinkopieren oder eine .csv/.txt-Datei laden. Eine Vorschau zeigt vorher, was übernommen wird. Doppelte Wörter und Zeilen ohne Deutsch werden übersprungen.
 - **Units:** Welcome und Unit 1 bis 5 sind angelegt. Weitere Units lassen sich unter „Wörter“ hinzufügen. Mit dem Stift-Symbol kann man sie umbenennen, z. B. mit dem Unit-Titel aus dem Buch.
 - **Extra-Wortschatz:** acht Themenlisten mit allgemeinem Grundwortschatz (Schule, Familie, Tiere …). Sie sind zunächst ausgeschaltet und lassen sich unter „Wörter“ einzeln einschalten.
 - **Karteikasten:** Jede Karte wandert bei richtiger Antwort ein Fach weiter (Abfrage nach 1, 2, 4, 7 und 14 Tagen) und bei falscher Antwort zurück in Fach 1. Auf der Startseite steht, wie viele Wörter heute fällig sind.

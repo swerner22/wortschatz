@@ -381,9 +381,10 @@
   }
 
   /* ---------- Wörter ---------- */
-  function emptyWords() {
+  function emptyWords(unit) {
+    const u = unit ? ` data-unit="${unit}"` : "";
     return `<div class="empty"><p><b>Hier ist noch nichts.</b></p><p class="muted">Trag Wörter aus deinem Englischbuch ein, dann kannst du sie üben.</p>
-      <p style="margin-top:16px"><button class="btn" data-a="add">Neues Wort eintragen</button></p></div>`;
+      <p class="row wrap" style="margin-top:16px;justify-content:center"><button class="btn" data-a="add"${u}>Neues Wort eintragen</button><button class="btn ghost" data-a="bulk"${u}>Viele Wörter auf einmal</button></p></div>`;
   }
   function unitRow(u) {
     const ws = wordsOf(u.id); const c = boxCounts(ws); const n = ws.length;
@@ -412,7 +413,7 @@
       list = hits.length ? `<ul class="wordlist">${hits.slice(0, 80).map((w) => wordRow(w, true)).join("")}</ul>`
         : `<div class="empty"><p>„${esc(search)}“ steht noch nicht drin.</p><p style="margin-top:14px"><button class="btn" data-a="add" data-en="${esc(search)}">Als neues Wort eintragen</button></p></div>`;
     } else {
-      list = `<div class="group-title"><h2>Mein Englischbuch</h2><button class="linkbtn" data-a="new-unit">Unit hinzufügen</button></div>
+      list = `<div class="group-title"><h2>Mein Englischbuch</h2><span class="row"><button class="linkbtn" data-a="bulk">Viele Wörter eintragen</button><button class="linkbtn" data-a="new-unit">Unit hinzufügen</button></span></div>
         <ul class="unitlist">${book.map(unitRow).join("")}</ul>
         ${extra.length ? `<div class="group-title"><h2>Extra-Wortschatz</h2></div>
         <p class="muted small" style="margin-top:6px">Grundwortschatz für die 5. Klasse. Schalte ein, was du mitüben willst.</p>
@@ -431,8 +432,9 @@
         <h1 style="flex:1">${esc(u.title)}</h1>
         <button class="iconbtn" data-a="edit-unit" data-id="${u.id}" aria-label="Unit umbenennen">${I.edit}</button></div>
       ${ws.length ? `<div class="row wrap"><button class="btn" data-a="practice-unit" data-id="${u.id}">Diese Unit üben</button>
+        <button class="btn ghost" data-a="bulk" data-unit="${u.id}">Viele Wörter eintragen</button>
         <span class="muted">${ws.length} ${ws.length === 1 ? "Wort" : "Wörter"}</span></div>
-        <ul class="wordlist">${ws.map((w) => wordRow(w)).join("")}</ul>` : emptyWords()}
+        <ul class="wordlist">${ws.map((w) => wordRow(w)).join("")}</ul>` : emptyWords(u.id)}
       ${u.group === "extra" && !u.active ? `<p class="muted small">Diese Wörter sind gerade nicht bei den fälligen Wörtern dabei. Schalte die Liste unter „Wörter“ ein, um sie mitzuüben.</p>` : ""}
     </div>
     <button class="btn fab" data-a="add" data-unit="${u.id}">${I.plus} Neues Wort</button>`;
@@ -676,7 +678,70 @@
     render(); window.scrollTo(0, 0);
   }
 
+  /* ---------- Sammel-Eingabe ---------- */
+  function parseBulk(text, unit) {
+    const seen = new Set(S.words.filter((w) => w.unit === unit).map((w) => norm(w.en, "en")));
+    return text.split(/\r?\n/).map((raw) => raw.trim()).filter(Boolean).map((line) => {
+      let parts;
+      if (line.includes("\t")) parts = line.split("\t");
+      else if (line.includes(";")) parts = line.split(";");
+      else if (line.includes(" = ")) parts = line.split(" = ");
+      else if (/\s[–—-]\s/.test(line)) { const m = line.match(/^(.*?)\s[–—-]\s(.*)$/); parts = [m[1], m[2]]; }
+      else parts = [line];
+      parts = parts.map((p) => p.trim().replace(/^"(.*)"$/, "$1").trim());
+      const [en = "", de = "", ex = ""] = parts;
+      let status = "ok";
+      if (!en || !de) status = "incomplete";
+      else if (seen.has(norm(en, "en"))) status = "dup";
+      if (status === "ok") seen.add(norm(en, "en"));
+      return { en, de, ex, status };
+    });
+  }
+  function bulkPreview(rows) {
+    if (!rows.length) return '<p class="muted small">Hier erscheint die Vorschau, sobald du etwas eingibst.</p>';
+    const ok = rows.filter((r) => r.status === "ok").length;
+    const skip = rows.length - ok;
+    const label = { ok: "neu", dup: "schon drin", incomplete: "Deutsch fehlt" };
+    return `<p><b>${ok} ${ok === 1 ? "Wort wird" : "Wörter werden"} übernommen.</b>${skip ? ` <span class="muted">${skip} ${skip === 1 ? "Zeile wird" : "Zeilen werden"} übersprungen.</span>` : ""}</p>
+      <div class="g-tw bulk-prev"><table><thead><tr><th>Englisch</th><th>Deutsch</th><th></th></tr></thead><tbody>
+      ${rows.slice(0, 200).map((r) => `<tr class="${r.status}"><td lang="en">${esc(r.en)}${r.ex ? `<br><span class="small muted">${esc(r.ex)}</span>` : ""}</td><td>${esc(r.de)}</td><td><span class="bstat ${r.status}">${label[r.status]}</span></td></tr>`).join("")}
+      </tbody></table></div>`;
+  }
+  function bulkSheet(preUnit) {
+    const unit = preUnit || S.settings.lastUnit || S.units[0].id;
+    sheet(`<form class="stack" data-form="bulk" autocomplete="off">
+      <div class="row between"><h2>Viele Wörter eintragen</h2><button type="button" class="iconbtn" data-a="close" aria-label="Schließen">${I.close}</button></div>
+      <label class="field"><span>In welche Unit?</span><select name="unit" id="bulk-unit">${unitOptions(unit)}</select></label>
+      <label class="field"><span>Ein Wort pro Zeile: Englisch ; Deutsch ; Beispielsatz (freiwillig)</span>
+        <textarea name="text" id="bulk-text" rows="8" lang="en" autocapitalize="off" spellcheck="false" placeholder="beach ; Strand&#10;(to) meet ; kennenlernen, treffen ; Nice to meet you!&#10;seagull = Möwe"></textarea></label>
+      <p class="hint">Trennen geht mit <b>;</b>, mit <b>=</b> oder mit einem Strich mit Leerzeichen davor und danach. Du kannst auch zwei oder drei Spalten aus Excel oder Google Tabellen hineinkopieren.</p>
+      <div class="row wrap"><button type="button" class="btn ghost" data-a="bulk-file">Aus Datei laden (.csv, .txt)</button><input type="file" id="bulk-file" accept=".csv,.txt,text/plain,text/csv" hidden></div>
+      <div id="bulk-prev">${bulkPreview([])}</div>
+      <button class="btn big" type="submit" id="bulk-go" disabled>Wörter übernehmen</button>
+    </form>`, (wrap) => setTimeout(() => wrap.querySelector("#bulk-text").focus(), 50));
+  }
+  function bulkRefresh() {
+    const t = $("#bulk-text"), u = $("#bulk-unit"); if (!t || !u) return;
+    const rows = parseBulk(t.value, u.value);
+    $("#bulk-prev").innerHTML = bulkPreview(rows);
+    const ok = rows.filter((r) => r.status === "ok").length;
+    const b = $("#bulk-go"); b.disabled = !ok; b.textContent = ok ? `${ok} ${ok === 1 ? "Wort" : "Wörter"} übernehmen` : "Wörter übernehmen";
+  }
+  function bulkSave(f) {
+    const unit = f.unit.value;
+    const rows = parseBulk(f.text.value, unit).filter((r) => r.status === "ok");
+    if (!rows.length) return;
+    const t = today(), base = Date.now();
+    rows.forEach((r, i) => { const w = newWord(r.en, r.de, unit, r.ex, t); w.created = base + i; S.words.push(w); });
+    S.settings.lastUnit = unit;
+    const un = unitById(unit); if (un && un.group === "extra") un.active = true;
+    save(); closeSheet();
+    toast(rows.length + (rows.length === 1 ? " Wort" : " Wörter") + " eingetragen");
+    go("unit", unit);
+  }
+
   /* ---------- Dialoge ---------- */
+
   function sheet(html, onMount) {
     closeSheet();
     const wrap = document.createElement("div");
@@ -802,6 +867,8 @@
     switch (a) {
       case "add": wordSheet(null, { unit: el.dataset.unit, en: el.dataset.en }); break;
       case "close": closeSheet(); break;
+      case "bulk": bulkSheet(el.dataset.unit); break;
+      case "bulk-file": $("#bulk-file").click(); break;
       case "edit": wordSheet(S.words.find((w) => w.id === id)); break;
       case "del-word": {
         const w = S.words.find((x) => x.id === id);
@@ -869,8 +936,15 @@
   });
   document.addEventListener("change", (e) => {
     if (e.target.id === "importfile" && e.target.files[0]) doImport(e.target.files[0]);
+    if (e.target.id === "bulk-unit") bulkRefresh();
+    if (e.target.id === "bulk-file" && e.target.files[0]) {
+      const rd = new FileReader();
+      rd.onload = () => { const t = $("#bulk-text"); t.value = (t.value.trim() ? t.value.trim() + "\n" : "") + String(rd.result).replace(/^\uFEFF/, ""); bulkRefresh(); };
+      rd.readAsText(e.target.files[0]);
+    }
   });
   document.addEventListener("input", (e) => {
+    if (e.target.id === "bulk-text") { bulkRefresh(); return; }
     if (e.target.id === "vsearch") {
       vSearch = e.target.value;
       const l = $("#vlist"); if (l) l.innerHTML = verbListHtml(VERBS.filter(verbMatches));
@@ -889,6 +963,8 @@
     if (kind === "name") {
       e.preventDefault(); S.profile.name = f.n.value.trim(); save(); render();
       toast(S.profile.name ? "Hallo, " + S.profile.name + "!" : "Gespeichert");
+    } else if (kind === "bulk") {
+      e.preventDefault(); bulkSave(f);
     } else if (kind === "vt") {
       e.preventDefault(); vtSubmit(f);
     } else if (kind === "type") {

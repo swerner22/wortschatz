@@ -412,3 +412,13 @@ mark { background: #FFE9A8; color: inherit; border-radius: 4px; padding: 0 2px; 
   .g-navrow::-webkit-scrollbar { display: none; }
   .g-nav .chip { flex: none; }
 }
+
+/* Sammel-Eingabe */
+.field textarea { width: 100%; min-height: 180px; padding: 12px 16px; border: 2px solid var(--line); border-radius: var(--r-md); background: #fff; font: inherit; font-size: 18px; line-height: 1.5; resize: vertical; }
+.field textarea:focus { border-color: var(--f3); outline: none; }
+.bulk-prev { max-height: 320px; overflow-y: auto; }
+.bulk-prev tr.dup td, .bulk-prev tr.incomplete td { color: var(--ink-soft); }
+.bstat { font-size: 13px; font-weight: 700; border-radius: 999px; padding: 2px 10px; white-space: nowrap; }
+.bstat.ok { background: #DDF6EF; color: #0B6E5A; }
+.bstat.dup { background: var(--paper); color: var(--ink-soft); }
+.bstat.incomplete { background: #FDE3E3; color: #9E2E2E; }
